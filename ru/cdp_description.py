@@ -1,5 +1,6 @@
 import re
 from netmiko import ConnectHandler
+from netmiko.exceptions import NetmikoAuthenticationException, NetmikoTimeoutException
 from ipaddress import ip_address
 
 # ANSI-коды для цвета
@@ -41,6 +42,7 @@ def process_switch(ip_address, credentials):
         'username': credentials['username'],
         'password': credentials['password'],
         'secret': credentials.get('secret', ''),
+        'timeout': 10,
     }
 
     try:
@@ -53,31 +55,26 @@ def process_switch(ip_address, credentials):
         device_id = None
         local_interface = None
 
-        lines = cdp_output.splitlines()
-
-        for line in lines:
+        for line in cdp_output.splitlines():
             if "Device ID:" in line:
-                device_id = line.split("Device ID:")[1].strip()
-                device_id_cleaned = re.split(r'\(|\.', device_id)[0]
-                device_id_cleaned = re.sub(r'[^\w-]', '', device_id_cleaned)
-            
+                device_id = re.split(r'\(|\.', line.split("Device ID:")[1].strip())[0]
+                device_id = re.sub(r'[^\w-]', '', device_id)
+
             if "Interface:" in line:
                 match = re.search(r"Interface:\s+(\S+),", line)
                 if match:
                     local_interface = match.group(1)
+                    print(f"{COLOR_YELLOW}Обнаружен интерфейс: {local_interface} до устройства {device_id}{COLOR_RESET}")
 
-                print(f"{COLOR_YELLOW}Обнаружен интерфейс: {local_interface} для устройства {device_id_cleaned}{COLOR_RESET}")
+                    if device_id and local_interface:
+                        commands = [
+                            f"interface {local_interface}",
+                            f"description (to_{device_id})"
+                        ]
 
-                if device_id and local_interface:
-                    commands = [
-                        f"interface {local_interface}",
-                        f"description (to_{device_id_cleaned})"
-                    ]
-
-                    output = net_connect.send_config_set(commands)
-                    
-                    print(f"{COLOR_GREEN}Отправленные команды: {commands}{COLOR_RESET}")
-                    print(f"Ответ устройства:\n{output}")
+                        output = net_connect.send_config_set(commands)
+                        print(f"{COLOR_GREEN}Отправленные команды: {commands}{COLOR_RESET}")
+                        print(f"Ответ устройства:\n{output}")
 
                     device_id = None
                     local_interface = None
@@ -93,12 +90,16 @@ def process_switch(ip_address, credentials):
         print(f"{COLOR_CYAN}Описание интерфейсов на {ip_address_str} успешно обновлено.{COLOR_RESET}")
         return True
 
+    except NetmikoAuthenticationException:
+        print(f"{COLOR_RED}Ошибка аутентификации для {ip_address_str}.{COLOR_RESET}")
+        return False
     except ValueError as e:
         if "Failed to enter configuration mode" in str(e):
             print(f"{COLOR_RED}Ошибка: не удалось войти в конфигурационный режим на {ip_address_str}. Требуется enable пароль.{COLOR_RESET}")
             return 'enable_failed'
         print(f"{COLOR_RED}Ошибка подключения к {ip_address_str}: {e}{COLOR_RESET}")
         return False
+
 
 def main():
     ip_range_input = input("Введите IP-адрес или диапазон IP-адресов (например, 192.168.0.1-192.168.0.10): ")
@@ -130,18 +131,18 @@ def main():
     if use_enable == 'y':
         credentials['secret'] = input("Введите enable пароль: ")
 
-    for ip_address in ip_list:
-        result = process_switch(ip_address, credentials)
+    for ip in ip_list:
+        result = process_switch(ip, credentials)
         if result == 'enable_failed':
-            credentials['secret'] = input(f"{COLOR_RED}Повторите ввод enable пароля для {ip_address}: {COLOR_RESET}")
-            result = process_switch(ip_address, credentials)
-        while not result:
-            print(f"{COLOR_RED}Ошибка аутентификации для {ip_address}. Повторите ввод учетных данных.{COLOR_RESET}")
+            credentials['secret'] = input(f"{COLOR_RED}Повторите ввод enable пароля для {ip}: {COLOR_RESET}")
+            result = process_switch(ip, credentials)
+        elif not result:
+            print(f"{COLOR_RED}Повторите ввод учетных данных.{COLOR_RESET}")
             credentials['username'] = input("Введите логин: ")
             credentials['password'] = input("Введите пароль: ")
             if 'secret' in credentials:
                 credentials['secret'] = input("Введите enable пароль: ")
-            result = process_switch(ip_address, credentials)
+            result = process_switch(ip, credentials)
 
 if __name__ == "__main__":
     main()
