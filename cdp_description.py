@@ -41,8 +41,6 @@ def process_switch(ip_address, credentials):
         'username': credentials['username'],
         'password': credentials['password'],
         'secret': credentials.get('secret', ''),
-        'timeout': 120,
-        'fast_cli': False
     }
 
     try:
