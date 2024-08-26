@@ -93,6 +93,9 @@ def process_switch(ip_address, credentials):
     except NetmikoAuthenticationException:
         print(f"{COLOR_RED}Authentication error for {ip_address_str}.{COLOR_RESET}")
         return False
+    except NetmikoTimeoutException:
+        print(f"{COLOR_RED}Host {ip_address_str} is unavailable. Skipping.{COLOR_RESET}")
+        return True
     except ValueError as e:
         if "Failed to enter configuration mode" in str(e):
             print(f"{COLOR_RED}Error: Failed to enter configuration mode on {ip_address_str}. Enable password is required.{COLOR_RESET}")
